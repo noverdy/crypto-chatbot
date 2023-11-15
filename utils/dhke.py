@@ -10,6 +10,11 @@ def get_shared_key(private_key: int, public_key: int, modulus: int) -> int:
     return shared_key
 
 
+def calculate_public_key(private_key: int, modulus: int) -> int:
+    public_key = pow(2, private_key, modulus)
+    return public_key
+
+
 def encrypt(key: int, message: bytes) -> bytes:
     key = sha256(long_to_bytes(key)).digest()[:16]
     cipher = AES.new(key, AES.MODE_ECB)
