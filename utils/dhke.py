@@ -5,13 +5,13 @@ from Crypto.Util.Padding import pad, unpad
 from string import printable
 
 
-def get_shared_key(private_key: int, public_key: int, modulus: int) -> int:
+def get_shared_key(public_key: int, private_key: int, modulus: int) -> int:
     shared_key = pow(public_key, private_key, modulus)
     return shared_key
 
 
-def calculate_public_key(private_key: int, modulus: int) -> int:
-    public_key = pow(2, private_key, modulus)
+def get_public_key(generator: int, private_key: int, modulus: int) -> int:
+    public_key = pow(generator, private_key, modulus)
     return public_key
 
 

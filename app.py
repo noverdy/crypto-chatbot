@@ -1,55 +1,59 @@
-from flask import Flask, jsonify, request, render_template
-from flask_cors import CORS
-from Crypto.Util.number import getPrime
-from utils.dhke import get_shared_key, encrypt, decrypt, calculate_public_key as calculate_pk
-from utils.message import get_response
-from dotenv import load_dotenv
 import json
 import os
 
+from Crypto.Hash import SHA512
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Util.number import getPrime, long_to_bytes
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS
+from openai import OpenAI
+
+from utils.aes import decrypt, encrypt
+from utils.dhke import get_public_key, get_shared_key
+from utils.message import get_response
 
 load_dotenv()
 app = Flask(__name__)
 CORS(app)
-PRIVATE_KEY = int(os.environ['PRIVATE_KEY'], 16)
+
+ai = OpenAI()
+
+GENERATOR = int(os.environ['GENERATOR'], 16)
 MODULUS = int(os.environ['MODULUS'], 16)
+PRIVATE_KEY = int(os.environ['PRIVATE_KEY'], 16)
+
+PUBLIC_KEY = get_public_key(GENERATOR, PRIVATE_KEY, MODULUS)
+DERIVED_KEYS = {}
 
 
-@app.route('/generate-key', methods=['GET'])
-def generate_key():
-    key = getPrime(2048)
+@app.route('/parameters', methods=['GET'])
+def parameters():
     return jsonify({
-        'key': hex(key),
+        'generator': hex(GENERATOR),
         'modulus': hex(MODULUS)
     })
 
 
-@app.route('/calculate-public-key', methods=['POST'])
-def calculate_public_key():
-    try:
-        data = json.loads(request.data)
-        key = int(data['private_key'], 16)
-        modulus = int(data['modulus'], 16)
-        public_key = calculate_pk(key, modulus)
-        return jsonify({
-            'public_key': hex(public_key),
-            'modulus': hex(modulus)
-        })
-    except Exception as e:
-        return jsonify({'error': getattr(e, 'message', str(e))}), 400
-
-
-@app.route('/exchange', methods=['POST'])
+@app.route('/key-exchange', methods=['POST'])
 def exchange():
+    global DERIVED_KEYS
     try:
         data = json.loads(request.data)
-        public_key = int(data['public_key'], 16)
-        shared_key = get_shared_key(PRIVATE_KEY, public_key, MODULUS)
+        client_public_key = int(data['public_key'], 16)
+        client_private_key = int(data['private_key'], 16)
+
+        shared_key = get_shared_key(client_public_key, PRIVATE_KEY, MODULUS)
+        derived_key = PBKDF2(long_to_bytes(shared_key), b'',
+                             16, 100000, hmac_hash_module=SHA512)
+        DERIVED_KEYS[data['public_key']] = derived_key
+
         return jsonify({
-            'shared_key': hex(shared_key),
+            'public_key': hex(PUBLIC_KEY),
             'modulus': hex(MODULUS)
         })
     except Exception as e:
+        raise e
         return jsonify({'error': getattr(e, 'message', str(e))}), 400
 
 
@@ -57,14 +61,19 @@ def exchange():
 def respond():
     try:
         data = json.loads(request.data)
-        public_key = int(data['public_key'], 16)
+        public_key = data['public_key']
         message = data['message']
 
-        shared_key = get_shared_key(PRIVATE_KEY, public_key, MODULUS)
-        decrypted_message = decrypt(shared_key, bytes.fromhex(message))
-        response = get_response(decrypted_message)
-        encrypted_response = encrypt(shared_key, response)
-        return jsonify({'response': encrypted_response.hex()})
+        derived_key = DERIVED_KEYS[public_key]
+        decrypted_message = decrypt(bytes.fromhex(message), derived_key)
+
+        response = get_response(ai, decrypted_message)
+        encrypted_response = encrypt(response, derived_key)
+
+        return jsonify({
+            'response': encrypted_response.hex(),
+            'public_key': hex(PUBLIC_KEY),
+        })
     except Exception as e:
         return jsonify({'error': getattr(e, 'message', str(e))}), 400
 

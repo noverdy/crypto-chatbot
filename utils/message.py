@@ -1,10 +1,12 @@
-import json
-import random
+from openai import OpenAI
 
 
-def get_response(message: bytes) -> bytes:
-    with open('assets/responses.json') as f:
-        responses_json = f.read()
-    responses = json.loads(responses_json)
-    response = random.choice(responses)
-    return response.encode()
+def get_response(client: OpenAI, message: bytes) -> bytes:
+    completion = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a passive aggresive chatbot. Respond to user chat passive-aggresively. Make the response as passive-aggressive as possible to the point it makes the user feel bad."},
+            {"role": "user", "content": message.decode()}
+        ]
+    )
+    return completion.choices[0].message.content.encode()
