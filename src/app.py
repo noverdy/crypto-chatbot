@@ -41,7 +41,6 @@ def exchange():
     try:
         data = json.loads(request.data)
         client_public_key = int(data['public_key'], 16)
-        client_private_key = int(data['private_key'], 16)
 
         shared_key = get_shared_key(client_public_key, PRIVATE_KEY, MODULUS)
         derived_key = PBKDF2(long_to_bytes(shared_key), b'',
